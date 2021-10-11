@@ -22,13 +22,14 @@ type AccessTokenDetails struct {
 	AtExpires   int64
 }
 
-var client *redis.Client
+var rdb *redis.Client
 
 var mySigningKey = []byte("mysupersecretphrase")
 
 func CreateToken(userid string) (*AccessTokenDetails, error) {
 	td := &AccessTokenDetails{}
 	td.AtExpires = time.Now().Add(time.Second * 240).Unix()
+	//16070400
 	u, err := uuid.NewV4()
 	if err != nil {
 		// TODO: Handle error.
@@ -98,7 +99,7 @@ func ExtractAccessTokenMetadata(r *http.Request) (*AccessDetails, error) {
 }
 
 func FetchAccessAuth(authD *AccessDetails) (string, error) {
-	userid, err := client.Get(authD.AccessUuid).Result()
+	userid, err := rdb.Get(authD.AccessUuid).Result()
 	if err != nil {
 		return "", nil
 	}
@@ -111,7 +112,7 @@ func CreateAccessAuth(userid string, td *AccessTokenDetails) error {
 	at := time.Unix(td.AtExpires, 0) //converting Unix to UTC(to Time object)
 	now := time.Now()
 
-	errAccess := client.Set(td.AccessUuid, userid, at.Sub(now)).Err()
+	errAccess := rdb.Set(td.AccessUuid, userid, at.Sub(now)).Err()
 	if errAccess != nil {
 		return errAccess
 	}
@@ -123,7 +124,7 @@ func ResetAccessAuth(authD *AccessDetails) error {
 	rt := time.Duration(time.Minute * 15)
 	//.AtExpires = time.Now().Add(time.Minute * 15).Unix()
 
-	errRefresh := client.Expire(authD.AccessUuid, rt).Err()
+	errRefresh := rdb.Expire(authD.AccessUuid, rt).Err()
 	if errRefresh != nil {
 		return errRefresh
 	}
@@ -131,33 +132,19 @@ func ResetAccessAuth(authD *AccessDetails) error {
 }
 
 func DeleteAccessAuth(givenAccessUuid string) (int64, error) {
-	accessdeleted, err := client.Del(givenAccessUuid).Result()
+	accessdeleted, err := rdb.Del(givenAccessUuid).Result()
 	if err != nil {
 		return 0, err
 	}
 	return accessdeleted, nil
 }
 
-func init() {
+func ConnectToRedis() {
 	//Initializing redis
-	rdb := redis.NewClient(&redis.Options{
+	rdb = redis.NewClient(&redis.Options{
 		Addr:     "192.168.10.160:6379",
 		Password: "qwer1234", // no password set
 		DB:       0,          // use default DB
 	})
 	ping(rdb)
-
-}
-
-func ping(client *redis.Client) error {
-	pong, err := client.Ping().Result()
-	if err != nil {
-		fmt.Println(err)
-		return err
-
-	}
-	fmt.Println(pong, err)
-	// Output: PONG <nil>
-
-	return nil
 }
